@@ -368,6 +368,10 @@
       </div>
       <div></div>
     </div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:14px;cursor:pointer;">
+      <input type="checkbox" id="minCalloutInput" style="width:auto;">
+      <span style="font-size:13px;color:var(--text);">Weekday minimum call-out (still paid weekday normal hours even if you work less)</span>
+    </label>
     <div class="rate-note">
       Mon&ndash;Fri: normal rate for the weekday normal hours set above, 1.5x for the next block, 2x
       beyond that. Sat: 1.5x for the hours set above, 2x beyond that. Sunday is always treated as 2x
@@ -381,7 +385,7 @@
 <script>
 const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 let shifts = [];
-let settings = { baseRate: 40, taxRate: 20, wdNormalHours: 7.5, wdOtHours: 2, satOtHours: 2 };
+let settings = { baseRate: 40, taxRate: 20, wdNormalHours: 7.5, wdOtHours: 2, satOtHours: 2, wdMinCallout: true };
 let weekOffset = 0;
 
 function pad(n){ return n.toString().padStart(2,'0'); }
@@ -437,19 +441,26 @@ function tiersForShift(shift){
   const wdOt = settings.wdOtHours;
   const satOt = settings.satOtHours;
 
+  let minApplied = false;
+  let paid = worked;
+
   if(dow >= 1 && dow <= 5){
-    normal = Math.min(worked, wdNormal);
-    let rem = worked - wdNormal;
+    if(settings.wdMinCallout && worked < wdNormal){
+      paid = wdNormal;
+      minApplied = true;
+    }
+    normal = Math.min(paid, wdNormal);
+    let rem = paid - wdNormal;
     if(rem>0){ ot15 = Math.min(rem,wdOt); rem -= wdOt; }
     if(rem>0){ ot2 = rem; }
   } else if(dow === 6){
-    ot15 = Math.min(worked,satOt);
-    let rem = worked - satOt;
+    ot15 = Math.min(paid,satOt);
+    let rem = paid - satOt;
     if(rem>0){ ot2 = rem; }
   } else {
-    ot2 = worked;
+    ot2 = paid;
   }
-  return { worked, normal, ot15, ot2 };
+  return { worked, paid, minApplied, normal, ot15, ot2 };
 }
 
 function payForShift(shift){
@@ -500,7 +511,7 @@ function renderWeek(){
   weekShifts.forEach(s=>{
     const p = payForShift(s);
     normal += p.normal; ot15 += p.ot15; ot2 += p.ot2;
-    gross += p.pay; hours += p.worked;
+    gross += p.pay; hours += p.paid;
   });
 
   const taxRate = settings.taxRate/100;
@@ -532,7 +543,7 @@ function renderWeek(){
           <span class="shift-date">${d.getDate()} ${d.toLocaleDateString('en-AU',{month:'short'})}<span class="dow">${DOW[d.getDay()]}</span></span>
           <span class="shift-pay">${fmtMoney(p.pay)}</span>
         </div>
-        <div class="shift-times">${s.start}\u2013${s.finish}${s.breakMins?(' \u00b7 '+s.breakMins+'m break'):''} \u00b7 ${fmtHrs(p.worked)} hrs</div>
+        <div class="shift-times">${s.start}\u2013${s.finish}${s.breakMins?(' \u00b7 '+s.breakMins+'m break'):''} \u00b7 ${fmtHrs(p.paid)} hrs${p.minApplied?' (min. call-out, worked '+fmtHrs(p.worked)+')':''}</div>
         <div class="shift-ladder-mini" data-id="${s.id}"></div>
         <button class="del-btn" data-del="${s.id}">Remove</button>
       `;
@@ -594,6 +605,7 @@ async function loadAll(){
   document.getElementById('wdNormalInput').value = settings.wdNormalHours;
   document.getElementById('wdOtInput').value = settings.wdOtHours;
   document.getElementById('satOtInput').value = settings.satOtHours;
+  document.getElementById('minCalloutInput').checked = !!settings.wdMinCallout;
 
   const today = new Date();
   document.getElementById('dateInput').value = dateKey(today);
@@ -662,6 +674,11 @@ document.getElementById('wdOtInput').addEventListener('change', async (e)=>{
 document.getElementById('satOtInput').addEventListener('change', async (e)=>{
   const v = parseFloat(e.target.value);
   settings.satOtHours = isNaN(v) ? 0 : v;
+  await saveSettings();
+  renderWeek();
+});
+document.getElementById('minCalloutInput').addEventListener('change', async (e)=>{
+  settings.wdMinCallout = e.target.checked;
   await saveSettings();
   renderWeek();
 });
